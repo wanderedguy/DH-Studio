@@ -1,0 +1,6 @@
+{
+  "name": "DH2 Studio",
+  "description": "Professional DH² Studio e-commerce store for premium men's & women's fashion and multi-purpose products, featuring an advanced catalog, real-time filters, promo customizer, secure order workflow, and an integrated AI shopping assistant.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
