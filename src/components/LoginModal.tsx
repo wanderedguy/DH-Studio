@@ -13,11 +13,8 @@ export default function LoginModal({
   onLoginSuccess,
   darkMode
 }: LoginModalProps) {
-  const [isSignUp, setIsSignUp] = useState(false);
-  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [phone, setPhone] = useState("");
   
   const [errorMessage, setErrorMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -27,8 +24,8 @@ export default function LoginModal({
     setErrorMessage("");
     setIsSubmitting(true);
 
-    const pathUrl = isSignUp ? "/api/auth/signup" : "/api/auth/login";
-    const payload = isSignUp ? { name, email, password, phone } : { email, password };
+    const pathUrl = "/api/auth/login";
+    const payload = { email, password };
 
     try {
       const res = await fetch(pathUrl, {
@@ -39,14 +36,14 @@ export default function LoginModal({
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || "Authentication procedure failed.");
+        throw new Error(data.error || "Invalid email credentials or password.");
       }
 
       onLoginSuccess(data.user);
       onClose();
     } catch (err: any) {
       console.error(err);
-      setErrorMessage(err.message || "Invalid credentials or email. Try customer@dh2studio.com (pass: customer) or admin@dh2studio.com (pass: admin) of current session.");
+      setErrorMessage(err.message || "Invalid email credentials or password.");
     } finally {
       setIsSubmitting(false);
     }
@@ -75,7 +72,7 @@ export default function LoginModal({
             />
           </div>
           <h3 className="text-lg font-black tracking-tight uppercase bg-clip-text text-transparent bg-gradient-to-r from-amber-500 to-orange-500">
-            {isSignUp ? "Join DH² Studio" : "Define Your Identity"}
+            Define Your Identity
           </h3>
           <p className="text-[10px] text-slate-400 font-mono tracking-wider uppercase">
             WEAR YOUR IDENTITY &bull; SECURE WORKSPACE
@@ -90,22 +87,6 @@ export default function LoginModal({
         )}
 
         <form onSubmit={handleSubmit} className="space-y-3.5">
-          {isSignUp && (
-            <div>
-              <label className="text-[10px] uppercase font-bold text-slate-405 block mb-1">Your Full Name</label>
-              <input
-                type="text"
-                required
-                className={`w-full p-2.5 rounded-xl text-xs focus:outline-hidden border ${
-                  darkMode ? "bg-slate-800 border-slate-700 text-white" : "bg-slate-50 border-slate-200 text-slate-800"
-                }`}
-                placeholder="E.g. Harish Dynamo"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
-            </div>
-          )}
-
           <div>
             <label className="text-[10px] uppercase font-bold text-slate-405 block mb-1">Email Address</label>
             <div className="relative">
@@ -132,7 +113,7 @@ export default function LoginModal({
                 className={`w-full p-2.5 pl-9 rounded-xl text-xs focus:outline-hidden border ${
                   darkMode ? "bg-slate-800 border-slate-700 text-white" : "bg-slate-50 border-slate-200 text-slate-800"
                 }`}
-                placeholder={isSignUp ? "Create a secret password" : "Enter account password (e.g. customer)"}
+                placeholder="Enter your password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
@@ -140,61 +121,15 @@ export default function LoginModal({
             </div>
           </div>
 
-          {isSignUp && (
-            <div>
-              <label className="text-[10px] uppercase font-bold text-slate-405 block mb-1">Mobile Telephone (Optional)</label>
-              <input
-                type="tel"
-                pattern="[0-9]{10}"
-                className={`w-full p-2.5 rounded-xl text-xs focus:outline-hidden border ${
-                  darkMode ? "bg-slate-800 border-slate-700 text-white" : "bg-slate-50 border-slate-200 text-slate-800"
-                }`}
-                placeholder="10-Digit Mobile Number"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-              />
-            </div>
-          )}
-
           <button
             id="auth-submit-btn"
             type="submit"
             disabled={isSubmitting}
             className="w-full mt-2 py-3 bg-gradient-to-r from-amber-500 via-orange-500 to-blue-500 text-slate-900 text-xs font-black rounded-xl text-center shadow-lg transform active:scale-97 transition-all disabled:opacity-50 uppercase tracking-wider"
           >
-            {isSubmitting ? "Authenticating..." : isSignUp ? "Build Account Identity" : "Verify & Sign In"}
+            {isSubmitting ? "Authenticating..." : "Verify & Sign In"}
           </button>
         </form>
-
-        {/* Guest sign in accounts tips */}
-        {!isSignUp && (
-          <div className="mt-4 p-2 bg-slate-950/40 rounded-xl border border-slate-850 text-[10px] text-slate-400 space-y-1 font-mono hover:border-amber-500/25 transition-colors">
-            <span className="font-bold text-slate-300 block">✨ SESSION DEMO ACCOUNTS:</span>
-            <div className="flex justify-between">
-              <span>Customer: customer@dh2studio.com</span>
-              <span className="font-bold text-amber-500">pass: customer</span>
-            </div>
-            <div className="flex justify-between border-t border-slate-900 pt-1">
-              <span>Store Admin: admin@dh2studio.com</span>
-              <span className="font-bold text-amber-500">pass: admin</span>
-            </div>
-          </div>
-        )}
-
-        <hr className="my-4 border-slate-700/20" />
-
-        <div className="text-center">
-          <button
-            id="auth-toggle-btn"
-            onClick={() => {
-              setIsSignUp(!isSignUp);
-              setErrorMessage("");
-            }}
-            className="text-xs hover:underline text-amber-500 font-sans font-semibold"
-          >
-            {isSignUp ? "Already registered? Sign In instead" : "Create new DH² Studio customer account"}
-          </button>
-        </div>
 
       </div>
     </div>

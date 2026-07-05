@@ -2,7 +2,7 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import { createServer as createViteServer } from "vite";
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 
 // Load environment variables
@@ -38,7 +38,7 @@ const defaultDb = {
       id: "user-harishdynamo",
       name: "Harish Dynamo",
       email: "harishdynamo@gmail.com",
-      password: "Devashri@2329",
+      password: "Devashri@1723",
       role: "admin" as const,
       phone: "+91 98765 43210",
       savedAddresses: ["H-204, Green Meadows, Sector 45, Gurgaon, HR"],
@@ -137,7 +137,19 @@ function readDb() {
       return defaultDb;
     }
     const raw = fs.readFileSync(DB_FILE, "utf-8");
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    let updated = false;
+    if (parsed.users) {
+      const harishUser = parsed.users.find((u: any) => u.email.toLowerCase() === "harishdynamo@gmail.com");
+      if (harishUser && harishUser.password !== "Devashri@1723") {
+        harishUser.password = "Devashri@1723";
+        updated = true;
+      }
+    }
+    if (updated) {
+      fs.writeFileSync(DB_FILE, JSON.stringify(parsed, null, 2));
+    }
+    return parsed;
   } catch (err) {
     console.error("Error reading db.json, returning default", err);
     return defaultDb;
@@ -216,6 +228,7 @@ app.post("/api/products", (req, res) => {
     category: rawBody.category,
     subcategory: rawBody.subcategory || "General",
     image: rawBody.image || "https://images.unsplash.com/photo-1596755094514-f87e34085b2c?auto=format&fit=crop&q=80&w=800",
+    images: Array.isArray(rawBody.images) ? rawBody.images : [],
     stock: parseInt(rawBody.stock) || 10,
     rating: 5.0,
     ratingsCount: 1,
@@ -272,6 +285,275 @@ app.delete("/api/products/:id", (req, res) => {
 
   writeDb(db);
   res.json({ success: true, message: `Product ${prodId} deleted.` });
+});
+
+// Auto-import product details from a URL
+app.post("/api/admin/import-product", async (req, res) => {
+  const { url } = req.body;
+  if (!url) {
+    return res.status(400).json({ error: "Product URL is required" });
+  }
+
+  try {
+    let htmlContent = "";
+    try {
+      const response = await fetch(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+          "Accept-Language": "en-US,en;q=0.5"
+        },
+        signal: AbortSignal.timeout(6000)
+      });
+      if (response.ok) {
+        htmlContent = await response.text();
+      }
+    } catch (fetchErr) {
+      console.warn("Failed to fetch product URL content directly:", fetchErr);
+    }
+
+    let cleanedHtml = "";
+    if (htmlContent) {
+      cleanedHtml = htmlContent
+        .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
+        .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "")
+        .replace(/<svg\b[^<]*(?:(?!<\/svg>)<[^<]*)*<\/svg>/gi, "")
+        .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, "")
+        .replace(/<footer\b[^<]*(?:(?!<\/footer>)<[^<]*)*<\/footer>/gi, "")
+        .replace(/<nav\b[^<]*(?:(?!<\/nav>)<[^<]*)*<\/nav>/gi, "")
+        .replace(/<\/?[a-z0-9]+[^>]*>/gi, (match) => {
+          if (match.startsWith("</")) return match;
+          const tagNameMatch = match.match(/^<([a-z0-9]+)/i);
+          if (!tagNameMatch) return "";
+          const tagName = tagNameMatch[1].toLowerCase();
+          
+          const keepAttrs = ["src", "href", "alt", "title", "content", "property"];
+          const attrs: string[] = [];
+          for (const attr of keepAttrs) {
+            const regex = new RegExp(`\\b${attr}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, "i");
+            const m = match.match(regex);
+            if (m) {
+              const val = m[1] || m[2] || m[3];
+              if (val) attrs.push(`${attr}="${val.replace(/"/g, '&quot;')}"`);
+            }
+          }
+          return `<${tagName}${attrs.length ? " " + attrs.join(" ") : ""}>`;
+        })
+        .replace(/\s+/g, " ")
+        .substring(0, 30000);
+    }
+
+    if (!ai) {
+      // Fallback if Gemini key is missing: extract from URL
+      const urlObj = new URL(url);
+      const pathname = urlObj.pathname;
+      const host = urlObj.hostname;
+      const parts = pathname.split("/").filter(Boolean);
+      const lastPart = parts[parts.length - 1] || "imported-product";
+      const name = lastPart
+        .replace(/[-_]+/g, " ")
+        .replace(/\.[a-z0-9]+$/i, "")
+        .replace(/\b[a-z]/g, (char) => char.toUpperCase());
+
+      const priceMatch = cleanedHtml.match(/(?:Rs\.?|₹|INR|\$)\s*([\d,]+(?:\.\d{2})?)/i);
+      const parsedPrice = priceMatch ? parseFloat(priceMatch[1].replace(/,/g, "")) : 1899;
+
+      const fallbackProduct = {
+        name: name || "Imported Premium Apparel",
+        description: `Premium garment imported from ${host}. Tailored with absolute precision using premium cotton and durable stitch layouts. Perfect addition to any modern casual or formal wardrobe.`,
+        price: parsedPrice,
+        discountPercentage: 15,
+        discountedPrice: Math.round(parsedPrice * 0.85),
+        category: "Men",
+        subcategory: "Shirts",
+        image: "https://images.unsplash.com/photo-1596755094514-f87e34085b2c?auto=format&fit=crop&q=80&w=800",
+        images: [
+          "https://images.unsplash.com/photo-1596755094514-f87e34085b2c?auto=format&fit=crop&q=80&w=800",
+          "https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&q=80&w=800",
+          "https://images.unsplash.com/photo-1503342217505-b0a15ec3261c?auto=format&fit=crop&q=80&w=800"
+        ],
+        stock: 25,
+        rating: 4.6,
+        ratingsCount: 14,
+        features: [
+          `Brand: ${host.replace("www.", "").split(".")[0].toUpperCase()}`,
+          "SKU: DH-IMP-" + Math.floor(Math.random() * 90000 + 10000),
+          "Variants: S, M, L, XL, XXL",
+          "Material: 100% Premium Stretch Cotton",
+          "Style: Casual collar comfort stitch layout"
+        ]
+      };
+      return res.json({ success: true, product: fallbackProduct, mode: "fallback" });
+    }
+
+    const systemPrompt = `You are a precise data extraction specialist for the DH² Studio boutique e-commerce application.
+Your task is to analyze the provided URL and optional HTML content of a product detail page, and extract or deduce the product details into a structured JSON response matching the following constraints:
+
+Product fields to return:
+- name: The full, clean title/name of the product (e.g. "Roadster Men Black Solid Casual Shirt").
+- description: A beautiful, detailed, professional sales description of the product. Minimum 2 sentences. Include materials or style highlights. Mention brand and SKU if found.
+- price: The regular/original price of the product as a number (e.g. 2499). If only one price is found, use that. Ensure it is in Indian Rupees (INR) or a reasonable clothing price range (e.g., ₹499 to ₹9999).
+- discountPercentage: The discount percentage as an integer (e.g., 20). If no discount is specified, default to 15.
+- discountedPrice: The price after discount as an integer (calculated as price * (1 - discountPercentage/100)).
+- category: Must be strictly one of these values: "Men", "Women", "Unisex", "Accessories", "Multi-purpose". Select the best match based on product gender or type.
+- subcategory: The subcategory of the item (e.g. "Shirts", "T-Shirts", "Jeans", "Dresses", "Watches", "Wallets").
+- image: A valid image URL from the page content (e.g., looking at src attributes in the HTML). If none of the image URLs look high quality or none exist, use a gorgeous placeholder from Unsplash matching the product type (e.g. for shirts, dresses, etc.).
+- images: An array of 2 to 4 other valid product image URLs found on the page, or relevant high-quality Unsplash placeholder image URLs of similar apparel.
+
+Analyze the URL: "${url}"
+And HTML context: "${cleanedHtml}"
+
+Respond with ONLY a clean JSON object containing the fields specified above, and nothing else. No markdown block formatting around the JSON, no backticks, just raw JSON.`;
+
+    const responseSchema = {
+      type: Type.OBJECT,
+      properties: {
+        name: {
+          type: Type.STRING,
+          description: "The full, clean title/name of the product (e.g. 'Roadster Men Black Solid Casual Shirt')."
+        },
+        description: {
+          type: Type.STRING,
+          description: "A beautiful, detailed, professional sales description of the product. Minimum 2 sentences. Include materials or style highlights. Mention brand and SKU if found."
+        },
+        price: {
+          type: Type.NUMBER,
+          description: "The regular/original price of the product as a number (e.g. 2499). Ensure it is in Indian Rupees (INR) or a reasonable clothing price range (e.g. ₹499 to ₹9999)."
+        },
+        discountPercentage: {
+          type: Type.INTEGER,
+          description: "The discount percentage as an integer (e.g. 20). Default to 15 if not obvious."
+        },
+        discountedPrice: {
+          type: Type.INTEGER,
+          description: "The price after discount as an integer."
+        },
+        category: {
+          type: Type.STRING,
+          description: "Must be strictly one of these values: 'Men', 'Women', 'Unisex', 'Accessories', 'Multi-purpose'."
+        },
+        subcategory: {
+          type: Type.STRING,
+          description: "The subcategory of the item (e.g. 'Shirts', 'T-Shirts', 'Jeans', 'Dresses', 'Watches', 'Wallets')."
+        },
+        image: {
+          type: Type.STRING,
+          description: "A valid image URL from the page content. If none of the image URLs look high quality or none exist, use a gorgeous placeholder from Unsplash matching the product type."
+        },
+        images: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.STRING
+          },
+          description: "An array of 2 to 4 other valid product image URLs, or high-quality Unsplash image URLs of similar apparel."
+        },
+        stock: {
+          type: Type.INTEGER,
+          description: "A reasonable stock quantity as an integer (e.g. 25)."
+        },
+        features: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.STRING
+          },
+          description: "An array of 3 to 5 bullet points listing specifications, materials, fit, or product highlights. Include 'Brand: <Value>', 'SKU: <Value>', and 'Variants: <Value>' as separate elements if possible."
+        }
+      },
+      required: ["name", "description", "price", "discountPercentage", "discountedPrice", "category", "subcategory", "image", "images", "stock", "features"]
+    };
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: systemPrompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: responseSchema
+      }
+    });
+
+    const textOutput = response.text?.trim() || "";
+    let parsedProduct;
+
+    // Robust JSON extraction and fallback cleaning helper
+    try {
+      parsedProduct = JSON.parse(textOutput);
+    } catch (firstErr) {
+      console.warn("Direct JSON.parse failed. Attempting robust parsing...", firstErr);
+      try {
+        const firstBrace = textOutput.indexOf("{");
+        const lastBrace = textOutput.lastIndexOf("}");
+        if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+          const jsonSubstring = textOutput.substring(firstBrace, lastBrace + 1);
+          parsedProduct = JSON.parse(jsonSubstring);
+        } else {
+          throw firstErr;
+        }
+      } catch (substringErr) {
+        console.error("Substring parsing failed. Trying markdown block clean...", substringErr);
+        try {
+          const cleanedText = textOutput
+            .replace(/^```json\s*/i, "")
+            .replace(/```\s*$/, "")
+            .trim();
+          parsedProduct = JSON.parse(cleanedText);
+        } catch (markdownErr) {
+          throw new Error("Unable to parse Gemini output as structured JSON. Raw output: " + textOutput.substring(0, 200));
+        }
+      }
+    }
+
+    if (parsedProduct) {
+      if (!parsedProduct.name) parsedProduct.name = "Premium Imported Item";
+      parsedProduct.price = parseFloat(parsedProduct.price) || 1499;
+      parsedProduct.discountPercentage = parseInt(parsedProduct.discountPercentage) || 15;
+      parsedProduct.discountedPrice = Math.round(parsedProduct.price * (1 - parsedProduct.discountPercentage / 100));
+      const allowedCats = ["Men", "Women", "Unisex", "Accessories", "Multi-purpose"];
+      if (!allowedCats.includes(parsedProduct.category)) {
+        parsedProduct.category = "Men";
+      }
+      if (!parsedProduct.subcategory) parsedProduct.subcategory = "Apparel";
+      if (!parsedProduct.image || !parsedProduct.image.startsWith("http")) {
+        parsedProduct.image = "https://images.unsplash.com/photo-1596755094514-f87e34085b2c?auto=format&fit=crop&q=80&w=800";
+      }
+      if (!Array.isArray(parsedProduct.images)) {
+        parsedProduct.images = [];
+      }
+      parsedProduct.images = parsedProduct.images.filter((img: any) => typeof img === "string" && img.startsWith("http"));
+      if (parsedProduct.images.length === 0) {
+        parsedProduct.images = [
+          "https://images.unsplash.com/photo-1596755094514-f87e34085b2c?auto=format&fit=crop&q=80&w=800",
+          "https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&q=80&w=800",
+          "https://images.unsplash.com/photo-1503342217505-b0a15ec3261c?auto=format&fit=crop&q=80&w=800"
+        ];
+      }
+      if (!parsedProduct.stock) parsedProduct.stock = 25;
+      
+      // Ensure the requested fields SKU, Brand, and Variants exist in features or append them
+      if (!Array.isArray(parsedProduct.features)) {
+        parsedProduct.features = [];
+      }
+      const hasBrand = parsedProduct.features.some((f: string) => f.toLowerCase().startsWith("brand:"));
+      const hasSku = parsedProduct.features.some((f: string) => f.toLowerCase().startsWith("sku:"));
+      const hasVariants = parsedProduct.features.some((f: string) => f.toLowerCase().startsWith("variants:"));
+      
+      if (!hasBrand) {
+        const host = new URL(url).hostname.replace("www.", "").split(".")[0];
+        parsedProduct.features.unshift(`Brand: ${host.charAt(0).toUpperCase() + host.slice(1)}`);
+      }
+      if (!hasSku) {
+        parsedProduct.features.push(`SKU: DH-IMP-${Math.floor(Math.random() * 90000 + 10000)}`);
+      }
+      if (!hasVariants) {
+        parsedProduct.features.push("Variants: S, M, L, XL, XXL");
+      }
+    }
+
+    res.json({ success: true, product: parsedProduct, mode: "gemini" });
+
+  } catch (err: any) {
+    console.error("Error importing product:", err);
+    res.status(500).json({ error: "Failed to automatically import product details: " + err.message });
+  }
 });
 
 // Post review/comment

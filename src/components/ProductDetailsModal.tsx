@@ -18,6 +18,10 @@ export default function ProductDetailsModal({
   darkMode
 }: ProductDetailsModalProps) {
   const [selectedSize, setSelectedSize] = useState<string>("M");
+  const [activeIndex, setActiveIndex] = useState<number>(0);
+  const allImages = [product.image, ...(product.images || [])].filter((img, idx, self) => img && self.indexOf(img) === idx);
+  const activeImage = allImages[activeIndex] || product.image;
+
   const [reviewName, setReviewName] = useState<string>("");
   const [reviewRating, setReviewRating] = useState<number>(5);
   const [reviewComment, setReviewComment] = useState<string>("");
@@ -77,17 +81,48 @@ export default function ProductDetailsModal({
         </button>
 
         {/* 1. IMAGE PORTION */}
-        <div className="w-full md:w-1/2 relative bg-slate-800/10 md:h-full overflow-hidden flex items-center justify-center">
-          <img
-            src={product.image}
-            alt={product.name}
-            className="w-full h-full object-cover max-h-[350px] md:max-h-full"
-            referrerPolicy="no-referrer"
-          />
-          {product.discountPercentage > 0 && (
-            <span className="absolute top-4 left-4 bg-orange-600 text-white text-xs font-black font-sans px-3 py-1.5 rounded-full">
-              {product.discountPercentage}% OFF ORIGINAL PRICE
-            </span>
+        <div className="w-full md:w-1/2 relative bg-slate-800/10 md:h-full overflow-hidden flex flex-col justify-center items-center">
+          <div className="w-full flex-1 flex items-center justify-center relative overflow-hidden">
+            <img
+              src={activeImage}
+              alt={product.name}
+              className="w-full h-full object-cover max-h-[350px] md:max-h-[460px]"
+              referrerPolicy="no-referrer"
+            />
+            {product.discountPercentage > 0 && (
+              <span className="absolute top-4 left-4 bg-orange-600 text-white text-xs font-black font-sans px-3 py-1.5 rounded-full z-10 shadow-md">
+                {product.discountPercentage}% OFF ORIGINAL PRICE
+              </span>
+            )}
+          </div>
+          
+          {/* Gallery Thumbnails List */}
+          {allImages.length > 1 && (
+            <div className={`w-full p-3 flex gap-2 overflow-x-auto justify-center border-t shrink-0 ${
+              darkMode ? "bg-slate-950/45 border-slate-800" : "bg-slate-50 border-slate-100"
+            }`}>
+              {allImages.map((img, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => setActiveIndex(idx)}
+                  className={`w-12 h-12 rounded-lg overflow-hidden border-2 transition-all shrink-0 cursor-pointer ${
+                    activeIndex === idx 
+                      ? "border-amber-500 scale-105 shadow-sm" 
+                      : darkMode 
+                        ? "border-transparent opacity-50 hover:opacity-100" 
+                        : "border-transparent opacity-60 hover:opacity-100"
+                  }`}
+                  title={`View image angle ${idx + 1}`}
+                >
+                  <img
+                    src={img}
+                    alt={`Preview thumbnail ${idx + 1}`}
+                    className="w-full h-full object-cover"
+                    referrerPolicy="no-referrer"
+                  />
+                </button>
+              ))}
+            </div>
           )}
         </div>
 

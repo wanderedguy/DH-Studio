@@ -16,6 +16,7 @@ export interface Product {
   category: 'Men' | 'Women' | 'Unisex' | 'Accessories' | 'Multi-purpose';
   subcategory: string;
   image: string; // Image link
+  images?: string[]; // Optional multiple images
   stock: number;
   rating: number; // e.g. 4.5
   ratingsCount: number;
@@ -49,7 +50,7 @@ export interface Order {
   couponCode?: string;
   shippingAddress: string;
   shippingPhone: string;
-  status: 'Order Placed' | 'Processing' | 'Shipped' | 'Out for Delivery' | 'Delivered';
+  status: 'Order Placed' | 'Processing' | 'Shipped' | 'Out for Delivery' | 'Delivered' | 'Cancelled';
   orderDate: string;
   trackingUpdates: { status: string; date: string; description: string }[];
 }
